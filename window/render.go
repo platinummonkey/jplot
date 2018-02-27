@@ -13,7 +13,7 @@ import (
 	"github.com/rs/jplot/data"
 	"github.com/wcharczuk/go-chart"
 	"github.com/wcharczuk/go-chart/drawing"
-	"github.com/wcharczuk/go-chart/seq"
+	//"github.com/wcharczuk/go-chart/seq"
 )
 
 func Init() {
@@ -36,8 +36,8 @@ func Reset() {
 // Graph generate a line graph with series.
 func Graph(series []chart.Series, markers []chart.GridLine, width, height int) chart.Chart {
 	for i, s := range series {
-		if s, ok := s.(chart.ContinuousSeries); ok {
-			s.XValues = seq.Range(0, float64(len(s.YValues)-1))
+		if s, ok := s.(chart.TimeSeries); ok {
+			//s.XValues = seq.Range(0, float64(len(s.YValues)-1))
 			c := chart.GetAlternateColor(i + 4)
 			s.Style = chart.Style{
 				Show:        true,
@@ -60,6 +60,11 @@ func Graph(series []chart.Series, markers []chart.GridLine, width, height int) c
 		Height: height,
 		Background: chart.Style{
 			Padding: chart.NewBox(5, 0, 0, 5),
+		},
+		XAxis: chart.XAxis{
+			Style:          chart.StyleShow(),
+			ValueFormatter: chart.TimeMinuteValueFormatter,
+			//ValueFormatter: chart.TimeDateValueFormatter,
 		},
 		YAxis: chart.YAxis{
 			Style:          chart.StyleShow(),
@@ -112,7 +117,14 @@ func TextColor(bg drawing.Color) drawing.Color {
 }
 
 func SIValueFormater(v interface{}) string {
-	value, prefix := humanize.ComputeSI(v.(float64))
+	var value float64
+	var prefix string
+	switch v.(type) {
+	case float64:
+		value, prefix = humanize.ComputeSI(v.(float64))
+	case data.Point:
+		value, prefix = humanize.ComputeSI((v.(data.Point)).Value)
+	}
 	value = float64(int(value*100)) / 100
 	return humanize.Ftoa(value) + " " + prefix
 }
@@ -144,24 +156,26 @@ func PrintGraphs(graphs []chart.Chart) {
 	fmt.Printf("\033]1337;File=preserveAspectRatio=1;inline=1:%s\007", b.Bytes())
 }
 
-func Render(specs []data.GraphSpec, dp *data.Points, width, height int) {
+func Render(specs []data.GraphSpec, ds *data.DataSet, width, height int) {
 	graphs := make([]chart.Chart, 0, len(specs))
 	for _, gs := range specs {
 		series := []chart.Series{}
 		markers := []chart.GridLine{}
 		for _, f := range gs.Fields {
-			vals := dp.Get(f.ID)
+			vals := ds.Get(f.ID)
 			if f.Marker {
 				for i, v := range vals {
-					if v > 0 {
+					if v.Value > 0 {
 						markers = append(markers, chart.GridLine{Value: float64(i)})
 					}
 				}
 				continue
 			}
-			series = append(series, chart.ContinuousSeries{
-				Name:    fmt.Sprintf("%s: %s", f.Name, SIValueFormater(vals[len(vals)-1])),
-				YValues: vals,
+			xVals, yVals := vals.XYValues()
+			series = append(series, chart.TimeSeries{
+				Name:    fmt.Sprintf("%s: %s", f.Name, SIValueFormater(yVals[len(yVals)-1])),
+				XValues: xVals,
+				YValues: yVals,
 			})
 		}
 		graphs = append(graphs, Graph(series, markers, width, height/len(specs)))

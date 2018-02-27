@@ -2,17 +2,19 @@ package cmd
 
 import (
 	"log"
+	"os"
 	"sync"
 	"time"
-	"os"
 
 	"github.com/rs/jplot/data"
-	"github.com/rs/jplot/window"
 	"github.com/rs/jplot/source"
+	"github.com/rs/jplot/window"
 	"github.com/spf13/cobra"
 )
 
 var datadogApiKey string
+var datadogApplicationKey string
+var datadogBaseUrl string
 
 // datadogCmd represents the datadog command
 var datadogCmd = &cobra.Command{
@@ -20,8 +22,10 @@ var datadogCmd = &cobra.Command{
 	Short: "Graph using datadog",
 	Long: `Graph using datadog metrics
 
+Must provide your Application Key
+
 Example:
-    jplot datadog --key 123412341234123412341234 mem.heap+mem.sys+mem.stack counter:cpu.sTime+cpu.uTime threads
+    jplot datadog --apiKey 123412341234123412341234 --appKey 123412341234123412341234 mem.heap+mem.sys+mem.stack counter:cpu.sTime+cpu.uTime threads
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		runDatadog(args)
@@ -40,14 +44,21 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// datadogCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	datadogCmd.Flags().StringVar(&datadogApiKey, "key", "", "Datadog API Key (obtain through the UI)")
-	datadogCmd.MarkFlagRequired("key")
+	datadogCmd.Flags().StringVar(&datadogApiKey, "apiKey", "", "Datadog API Key (obtain through the UI)")
+	datadogCmd.MarkFlagRequired("apiKey")
+	datadogCmd.Flags().StringVar(&datadogApplicationKey, "appKey", "", "Datadog Application Key (obtain through the UI)")
+	datadogCmd.MarkFlagRequired("appKey")
+	datadogCmd.Flags().StringVar(&datadogBaseUrl, "baseUrl", "", "Datadog Base URL (Defaults to https://app.datadoghq.com)")
 }
 
 func runDatadog(args []string) {
 	specs := parseSpec(args)
 
-	dp := &data.Points{Size: NumberPoints}
+	ds := &data.DataSet{
+		Size:              NumberPoints,
+		ExpectedFrequency: time.Second,
+	}
+	ready := NewAtomicReady(false)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	defer wg.Wait()
@@ -65,9 +76,13 @@ func runDatadog(args []string) {
 			}
 			select {
 			case <-t.C:
-				window.Render(specs, dp, width, height-25)
+				if ready.Ready() {
+					window.Render(specs, ds, width, height-25)
+				}
 			case <-exit:
-				window.Render(specs, dp, width, height-25)
+				if ready.Ready() {
+					window.Render(specs, ds, width, height-25)
+				}
 				return
 			}
 		}
@@ -77,31 +92,45 @@ func runDatadog(args []string) {
 		log.Fatal("Invalid api key specified")
 		os.Exit(1)
 	}
-	var s source.Getter = source.NewDatadog(datadogApiKey, specs, time.Second)
+	s := source.NewDatadog(datadogApiKey, datadogApplicationKey, datadogBaseUrl, specs, time.Second*10)
 	defer s.Close()
+
+	readyMap := make(map[string]bool, 0)
+	for _, gs := range specs {
+		for _, f := range gs.Fields {
+			readyMap[f.ID] = false
+		}
+	}
+
 	for {
-		jq, err := s.Get()
+		result, err := s.Get()
 		if err != nil {
 			log.Fatalf("Input error: %v", err)
 		}
-		if jq == nil {
+		if result == nil {
 			break
 		}
 		for _, gs := range specs {
 			for _, f := range gs.Fields {
-				dataPoints, err := jq.Query(f.Name)
-				if err != nil {
+
+				dataPoints, ok := result.DataPoints[f.ID]
+				if !ok {
 					log.Fatalf("Cannot get %s: %v", f.Name, err)
 				}
-				d, ok := dataPoints.([][]float64)
-				if !ok {
-					log.Fatalf("Invalid type %s: %T", f.Name, dataPoints)
-				}
-				// we only push the last value for now
-				if len(d) > 0 {
-					dp.Push(f.ID, d[len(d)-1][1], f.Counter)
+				if len(dataPoints) > 0 {
+					ds.PushPoints(f.ID, dataPoints, f.Counter)
+					readyMap[f.ID] = true
 				}
 			}
+		}
+		if !ready.Ready() {
+			// check if ready
+			for _, v := range readyMap {
+				if !v {
+					continue
+				}
+			}
+			ready.MarkReady()
 		}
 	}
 }

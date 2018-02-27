@@ -4,23 +4,17 @@ import (
 	"io/ioutil"
 	"net/http"
 	"time"
-
-	"github.com/elgs/gojq"
+	//"fmt"
 )
 
 type HTTP struct {
-	c    chan res
+	c    chan Result
 	done chan struct{}
-}
-
-type res struct {
-	jq  *gojq.JQ
-	err error
 }
 
 func NewHTTP(url string, interval time.Duration) HTTP {
 	h := HTTP{
-		c:    make(chan res),
+		c:    make(chan Result),
 		done: make(chan struct{}),
 	}
 	go h.run(url, interval)
@@ -44,22 +38,30 @@ func (h HTTP) run(url string, interval time.Duration) {
 func (h HTTP) fetch(url string) {
 	resp, err := http.Get(url)
 	if err != nil {
-		h.c <- res{err: err}
+		h.c <- Result{Err: err}
 		return
 	}
 	defer resp.Body.Close()
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		h.c <- res{err: err}
+		h.c <- Result{Err: err}
 		return
 	}
-	jq, err := gojq.NewStringQuery(string(b))
-	h.c <- res{jq: jq, err: err}
+	result, err := JsonDataToResult(b)
+	if err != nil || result.Err != nil {
+		h.c <- Result{Err: err}
+		return
+	} else {
+		h.c <- *result
+	}
 }
 
-func (h HTTP) Get() (*gojq.JQ, error) {
+func (h HTTP) Get() (*Result, error) {
 	res := <-h.c
-	return res.jq, res.err
+	if res.Err != nil {
+		return nil, res.Err
+	}
+	return &res, nil
 }
 
 func (h HTTP) Close() error {

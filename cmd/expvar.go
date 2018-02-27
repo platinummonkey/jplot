@@ -38,7 +38,10 @@ func init() {
 func runExpvar(args []string) {
 	specs := parseSpec(args)
 
-	dp := &data.Points{Size: NumberPoints}
+	dp := &data.DataSet{
+		Size:              NumberPoints,
+		ExpectedFrequency: time.Second,
+	}
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	defer wg.Wait()
@@ -64,32 +67,25 @@ func runExpvar(args []string) {
 		}
 	}()
 
-	var s source.Getter = source.NewStdin()
-	if url != "" {
-		s = source.NewHTTP(url, time.Second)
+	if url == "" {
+		log.Fatal("invalid URL")
 	}
+
+	s := source.NewHTTP(url, time.Second)
 	defer s.Close()
 	for {
-		jq, err := s.Get()
+		result, err := s.Get()
 		if err != nil {
 			log.Fatalf("Input error: %v", err)
 		}
-		if jq == nil {
-			break
-		}
 		for _, gs := range specs {
 			for _, f := range gs.Fields {
-				v, err := jq.Query(f.Name)
-				if err != nil {
-					log.Fatalf("Cannot get %s: %v", f.Name, err)
-				}
-				n, ok := v.(float64)
+				v, ok := result.DataPoints[f.Name]
 				if !ok {
-					log.Fatalf("Invalid type %s: %T", f.Name, v)
+					log.Fatalf("Cannot get %s: %v\n\t%v", f.Name, err, result.DataPoints)
 				}
-				dp.Push(f.ID, n, f.Counter)
+				dp.PushPoints(f.ID, v, f.Counter)
 			}
 		}
 	}
 }
-

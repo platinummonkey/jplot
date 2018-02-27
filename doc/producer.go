@@ -1,13 +1,13 @@
 package main
 
 import (
-	"math/rand"
-	"time"
 	"expvar"
+	"log"
+	"math/rand"
 	"net"
-	"os"
-	"github.com/BenduIO/bogan/log"
 	"net/http"
+	"os"
+	"time"
 )
 
 func add(i *int, d, min int) int {
@@ -19,11 +19,11 @@ func add(i *int, d, min int) int {
 }
 
 var (
-	memMap = expvar.NewMap("mem")
-	cpuMap = expvar.NewMap("cpu")
-	threads = expvar.NewInt("threads")
-	memHeap expvar.Int
-	memSys expvar.Int
+	memMap   = expvar.NewMap("mem")
+	cpuMap   = expvar.NewMap("cpu")
+	threads  = expvar.NewInt("threads")
+	memHeap  expvar.Int
+	memSys   expvar.Int
 	memStack expvar.Int
 	cpuUTime expvar.Int
 	cpuSTime expvar.Int
@@ -37,7 +37,7 @@ func main() {
 	}
 	go http.Serve(sock, nil)
 
-	t := time.NewTicker(time.Millisecond*250)
+	t := time.NewTicker(time.Millisecond * 250)
 	var utime, stime, cpu int
 
 	memMap.Set("heap", &memHeap)

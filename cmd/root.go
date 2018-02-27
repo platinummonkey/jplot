@@ -5,11 +5,12 @@ import (
 	"os"
 
 	homedir "github.com/mitchellh/go-homedir"
+	"github.com/rs/jplot/data"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/rs/jplot/data"
-	"strings"
 	"log"
+	"strings"
+	"sync/atomic"
 )
 
 var cfgFile string
@@ -120,4 +121,43 @@ func parseSpec(args []string) []data.GraphSpec {
 		specs = append(specs, gs)
 	}
 	return specs
+}
+
+// Ready is an atomic boolean based on int32
+type Ready struct {
+	int32
+}
+
+func NewAtomicReady(ready bool) *Ready {
+	b := &Ready{}
+	b.SetReady(ready)
+	return b
+}
+
+func (b *Ready) Ready() bool {
+	i := atomic.LoadInt32(&b.int32)
+	return i != 0
+}
+
+func (b *Ready) MarkReady() {
+	b.SetReady(true)
+}
+
+func (b *Ready) SetReady(v bool) {
+	if v {
+		atomic.StoreInt32(&b.int32, 1)
+		return
+	}
+	atomic.StoreInt32(&b.int32, 0)
+}
+
+func (b *Ready) MarkReadyIf(oldValue, newValue bool) bool {
+	var o, n int32
+	if oldValue {
+		o = 1
+	}
+	if newValue {
+		n = 1
+	}
+	return atomic.CompareAndSwapInt32(&b.int32, o, n)
 }
