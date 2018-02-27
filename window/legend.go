@@ -1,4 +1,4 @@
-package main
+package window
 
 import (
 	"math"
@@ -8,7 +8,7 @@ import (
 )
 
 // custom version of chart.Legend
-func legend(c *chart.Chart, userDefaults ...chart.Style) chart.Renderable {
+func Legend(c *chart.Chart, userDefaults ...chart.Style) chart.Renderable {
 	return func(r chart.Renderer, cb chart.Box, chartDefaults chart.Style) {
 		legendDefaults := chart.Style{
 			FillColor:   drawing.ColorWhite,
